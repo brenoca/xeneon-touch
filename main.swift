@@ -3,7 +3,8 @@
 // macOS has no touchscreen support, so the panel's touches drive the cursor as if it were a
 // trackpad/mouse spanning the whole desktop. This agent seizes the touch controller (WCH 27C0:0859)
 // so macOS stops interpreting it, maps each touch to the Edge's own screen bounds, and posts real
-// mouse events: tap = click, double tap = double click, drag = drag, hold = press, two fingers = scroll.
+// mouse events: tap = click, double tap = double click, drag = drag, hold = press, two fingers = scroll,
+// three-finger swipe = switch desktop / Mission Control / App Exposé.
 //
 // Needs: Input Monitoring (to seize the HID device) and Accessibility (to post events).
 // Usage: xeneon-touch [--debug]
@@ -68,19 +69,34 @@ func postScroll(dx: Double, dy: Double) {
     e.post(tap: .cghidEventTap)
 }
 
+/// Ctrl+arrow, the default Mission Control shortcuts. Arrow keys need the Fn and keypad flags
+/// for macOS to treat the synthetic press like a real one and fire the Spaces hotkeys.
+func postSpacesShortcut(_ key: CGKeyCode) {
+    for down in [true, false] {
+        guard let e = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { return }
+        e.flags = [.maskControl, .maskSecondaryFn, .maskNumericPad]
+        e.post(tap: .cghidEventTap)
+    }
+}
+
 // MARK: - Gesture state machine
 //
 // A touch doesn't press the button right away, so a scroll never starts with a stray click:
 //   lift before moving         -> click (double click if quick and close to the previous one)
 //   move > slop or hold > 300ms -> button down, then drag
 //   second finger              -> scroll by the centroid's movement, no click
+//   third finger               -> one swipe per gesture, like a trackpad: left/right switches
+//                                 desktop, up opens Mission Control, down shows App Exposé
 
 let slop: Double = 10          // px before a touch becomes a drag
 let holdDelay: Double = 0.3    // s before a still touch becomes a press
 let doubleTime: Double = 0.4
 let doubleDist: Double = 20
+let swipeDist: Double = 120    // px of three-finger travel before a swipe fires
 
-enum Phase { case idle, pending, pressed, scrolling }
+let keyLeft: CGKeyCode = 123, keyRight: CGKeyCode = 124, keyDown: CGKeyCode = 125, keyUp: CGKeyCode = 126
+
+enum Phase { case idle, pending, pressed, scrolling, swiping, swiped }
 var phase = Phase.idle
 var start = CGPoint.zero, last = CGPoint.zero
 var startTime = 0.0
@@ -109,6 +125,18 @@ func update(_ points: [CGPoint]) {
         holdTimer = Timer.scheduledTimer(withTimeInterval: holdDelay, repeats: false) { _ in
             if phase == .pending { press() }
         }
+    case (.idle, 3...), (.pending, 3...), (.scrolling, 3...):
+        holdTimer?.invalidate()
+        start = centroid(points); phase = .swiping
+    case (.swiping, 3...):
+        let c = centroid(points)
+        let (dx, dy) = (c.x - start.x, c.y - start.y)
+        guard max(abs(dx), abs(dy)) > swipeDist else { break }
+        // Content follows the fingers: swiping left reveals the desktop on the right.
+        postSpacesShortcut(abs(dx) > abs(dy) ? (dx < 0 ? keyRight : keyLeft) : (dy < 0 ? keyUp : keyDown))
+        phase = .swiped
+    case (.swiping, 0), (.swiped, 0): phase = .idle
+    case (.swiping, _), (.swiped, _): break  // wait for every finger to lift
     case (.idle, _), (.pending, 2...):
         holdTimer?.invalidate()
         last = centroid(points); phase = .scrolling

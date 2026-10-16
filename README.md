@@ -13,8 +13,13 @@ On a Mac, the XENEON EDGE's touch panel behaves like a trackpad. Touches drag th
 | Touch and drag | Drag (move windows, select text, sliders) |
 | Touch, hold ~0.3s, then move | Press and drag |
 | Two-finger drag | Scroll |
+| Three-finger swipe left / right | Switch desktop (Space) |
+| Three-finger swipe up | Mission Control |
+| Three-finger swipe down | App Exposé |
 
 Rotated mounting (portrait) is handled automatically.
+
+Three-finger swipes trigger the standard Mission Control keyboard shortcuts (`⌃←` / `⌃→` / `⌃↑` / `⌃↓`), because macOS doesn't let apps inject trackpad gestures. They're on by default. If a swipe does nothing, check **System Settings → Keyboard → Keyboard Shortcuts → Mission Control**. The switch is a single step per swipe, not finger-tracking like a trackpad.
 
 ## Install
 
@@ -60,7 +65,7 @@ The Edge's touch panel is a separate USB device from the display: a WCH controll
 
 1. Uses IOKit to **seize** the digitizer and mouse interfaces (`kIOHIDOptionsTypeSeizeDevice`), so macOS no longer processes them.
 2. Parses the raw touch reports and maps each contact onto the bounds of the display named **XENEON EDGE**, accounting for its position in your display arrangement and its rotation.
-3. Posts ordinary mouse and scroll events via `CGEvent`, using a small gesture state machine. A touch isn't pressed immediately, so scrolling never starts with a stray click.
+3. Posts ordinary mouse, scroll and Mission Control shortcut events via `CGEvent`, using a small gesture state machine. A touch isn't pressed immediately, so scrolling never starts with a stray click.
 
 It doesn't install a kernel or driver extension, and it doesn't use the network.
 
